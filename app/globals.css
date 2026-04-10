@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background: #f0f0f0;
+  color: #121212;
+  font-family: "Outfit", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #1040c0;
+  color: #fff;
+}
+
+/* Hard-press button interaction */
+.btn-press {
+  transition: box-shadow 80ms ease, transform 80ms ease;
+}
+.btn-press:active {
+  box-shadow: 1px 1px 0 #121212 !important;
+  transform: translate(3px, 3px);
+}
+
+/* Card hover lift */
+.card-lift {
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+.card-lift:hover {
+  box-shadow: 6px 6px 0 #121212;
+  transform: translate(-2px, -2px);
+}
+
+/* Geometric accent shapes */
+.geo-circle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.geo-square {
+  width: 10px;
+  height: 10px;
+}
+
+.geo-triangle {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 11px solid currentColor;
+}
+
+/* 3px border utility (Tailwind only has 2 and 4) */
+.border-3 {
+  border-width: 3px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+::-webkit-scrollbar-thumb {
+  background: #121212;
+  border: 2px solid #f0f0f0;
+}
