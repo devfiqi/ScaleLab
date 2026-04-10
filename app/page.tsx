@@ -1,6 +1,7 @@
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Footer from "@/components/Footer";
+import PreviewCards from "@/components/PreviewCards";
 import PromptInput from "@/components/PromptInput";
 
 export default function Page() {
@@ -9,6 +10,7 @@ export default function Page() {
       <Navbar />
       <Hero />
       <PromptInput />
+      <PreviewCards />
       <Footer />
     </main>
   );
