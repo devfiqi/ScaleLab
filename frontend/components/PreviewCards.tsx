@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { DesignResult } from "@/types/design";
 
 type Accent = "red" | "blue" | "yellow";
 type Shape = "circle" | "square" | "triangle";
@@ -31,9 +32,9 @@ const BORDER_MAP: Record<Accent, string> = {
   yellow: "border-l-bh-yellow",
 };
 
-const RESULTS_HEADING = "Results — Rate Limiter";
+const DEFAULT_HEADING = "Results — Rate Limiter";
 
-const CARD_SECTIONS: CardSection[] = [
+const DEFAULT_SECTIONS: CardSection[] = [
   {
     label: "Summary",
     title: "Token-Bucket Rate Limiter",
@@ -216,6 +217,109 @@ const CARD_SECTIONS: CardSection[] = [
   },
 ];
 
+function buildSections(data: DesignResult): CardSection[] {
+  const sections: CardSection[] = [];
+
+  sections.push({
+    label: "Summary",
+    title: data.title,
+    accent: "yellow",
+    shape: "circle",
+    wide: true,
+    summary: true,
+    description: data.summary,
+  });
+
+  if (data.requirements.length > 0) {
+    sections.push({
+      label: "Requirements",
+      title: "Functional & Non-Functional",
+      accent: "blue",
+      shape: "square",
+      columns: [
+        data.requirements.map((r) => ({ term: r.name, detail: r.description })),
+      ],
+    });
+  }
+
+  if (data.components.length > 0) {
+    sections.push({
+      label: "Components",
+      title: "Building Blocks",
+      accent: "blue",
+      shape: "triangle",
+      columns: [
+        data.components.map((c) => ({ term: c.name, detail: c.purpose })),
+      ],
+    });
+  }
+
+  if (data.tradeoffs.length > 0) {
+    sections.push({
+      label: "Tradeoffs",
+      title: "What You Give Up",
+      accent: "red",
+      shape: "circle",
+      columns: [
+        data.tradeoffs.map((t) => ({
+          term: t.decision,
+          detail: `Pros: ${t.pros.join(", ")} / Cons: ${t.cons.join(", ")}`,
+        })),
+      ],
+    });
+  }
+
+  if (data.bottlenecks.length > 0) {
+    sections.push({
+      label: "Bottlenecks",
+      title: "Where It Breaks",
+      accent: "red",
+      shape: "square",
+      columns: [
+        data.bottlenecks.map((b) => ({ term: b.name, detail: b.description })),
+      ],
+    });
+  }
+
+  if (data.failureModes.length > 0) {
+    const mid = Math.ceil(data.failureModes.length / 2);
+    sections.push({
+      label: "Failure Modes",
+      title: "When Things Go Wrong",
+      accent: "red",
+      shape: "triangle",
+      wide: true,
+      columns: [
+        data.failureModes.slice(0, mid).map((f) => ({ term: f.name, detail: f.description })),
+        data.failureModes.slice(mid).map((f) => ({ term: f.name, detail: f.description })),
+      ],
+      columnsGapClassName: "gap-2.5",
+    });
+  }
+
+  if (data.scalingStrategies.length > 0) {
+    const mid = Math.ceil(data.scalingStrategies.length / 2);
+    sections.push({
+      label: "Scaling Strategies",
+      title: "How to Grow",
+      accent: "blue",
+      shape: "circle",
+      wide: true,
+      columns: [
+        data.scalingStrategies
+          .slice(0, mid)
+          .map((s) => ({ term: s.name, detail: s.description })),
+        data.scalingStrategies
+          .slice(mid)
+          .map((s) => ({ term: s.name, detail: s.description })),
+      ],
+      columnsGapClassName: "gap-4",
+    });
+  }
+
+  return sections;
+}
+
 function GeoShape({ shape, accent }: { shape: Shape; accent: Accent }) {
   if (shape === "circle")
     return <div className={`geo-circle ${ACCENT_MAP[accent]}`} />;
@@ -287,7 +391,7 @@ function ListItem({ term, detail }: ListEntry) {
   return (
     <li className="border-b border-fg/10 pb-2 last:border-b-0 last:pb-0">
       <span className="font-semibold text-fg">{term}</span>
-      <span className="ml-1 text-fg/60">— {detail}</span>
+      {detail && <span className="ml-1 text-fg/60">— {detail}</span>}
     </li>
   );
 }
@@ -322,23 +426,30 @@ function CardColumns({
   );
 }
 
-export default function PreviewCards() {
+type PreviewCardsProps = {
+  result: DesignResult | null;
+};
+
+export default function PreviewCards({ result }: PreviewCardsProps) {
+  const heading = result ? `Results — ${result.title}` : DEFAULT_HEADING;
+  const sections = result ? buildSections(result) : DEFAULT_SECTIONS;
+
   return (
     <section className="mx-auto max-w-5xl px-6 pb-16 pt-2">
       <div className="mb-6 flex items-center gap-3 border-b-2 border-fg pb-3">
         <div className="h-3 w-3 bg-bh-blue" />
         <h2 className="text-xs font-bold uppercase tracking-[0.15em]">
-          {RESULTS_HEADING}
+          {heading}
         </h2>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {CARD_SECTIONS.map((section) => {
+        {sections.map((section) => {
           const { columns, columnsGapClassName, description, stats } = section;
 
           return (
             <Card
-              key={section.title}
+              key={section.label}
               label={section.label}
               title={section.title}
               accent={section.accent}

@@ -10,8 +10,19 @@ const EXAMPLES = [
   "Design a notification system",
 ];
 
-export default function PromptInput() {
+type PromptInputProps = {
+  onGenerate: (input: string) => void;
+  loading: boolean;
+};
+
+export default function PromptInput({ onGenerate, loading }: PromptInputProps) {
   const [value, setValue] = useState("");
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!value.trim() || loading) return;
+    onGenerate(value.trim());
+  }
 
   return (
     <section id="prompt" className="mx-auto max-w-5xl px-6 pb-10 pt-4">
@@ -19,7 +30,7 @@ export default function PromptInput() {
         Describe a system
       </p>
 
-      <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-5">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Input row */}
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="flex-1 border-3 border-fg bg-card shadow-hard-lg">
@@ -33,10 +44,10 @@ export default function PromptInput() {
           </div>
           <button
             type="submit"
-            disabled={!value.trim()}
+            disabled={!value.trim() || loading}
             className="btn-press border-3 border-fg bg-bh-yellow px-8 py-4 text-sm font-extrabold uppercase tracking-widest text-fg shadow-hard-lg disabled:bg-muted/20 disabled:text-muted/50 disabled:shadow-none"
           >
-            Generate
+            {loading ? "Generating..." : "Generate"}
           </button>
         </div>
 
