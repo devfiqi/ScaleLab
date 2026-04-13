@@ -1,18 +1,28 @@
 /*
-	Take an HTTP request, turn it into Go data, call the service, turn the result back into HTTP response
+	Take an HTTP request, turn it into Go data, call the design generator, turn the result back into HTTP response
 */
 
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
+	"scalelab-backend/internal/ai"
 	"scalelab-backend/internal/model"
-	"scalelab-backend/internal/service"
 )
 
-func GenerateHandler(w http.ResponseWriter, r *http.Request) {
+const maxGenerateBodyBytes = 64 << 10
+
+// Routes holds dependencies for HTTP handlers.
+type Routes struct {
+	Gen ai.DesignGenerator
+}
+
+// Generate handles POST /generate using the configured AI backend (stub or Gemini).
+func (h *Routes) Generate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -21,10 +31,9 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var req model.GenerateRequest
-
-	err := json.NewDecoder(r.Body).Decode(&req)
-
-	if err != nil {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxGenerateBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -34,10 +43,16 @@ func GenerateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := service.GenerateDesign(req.Input)
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
 
-	err = json.NewEncoder(w).Encode(result)
+	result, err := h.Gen.Generate(ctx, req.Input)
 	if err != nil {
+		http.Error(w, "generation failed", http.StatusBadGateway)
+		return
+	}
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
