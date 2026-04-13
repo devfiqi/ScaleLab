@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Footer from "@/components/Footer";
 import PreviewCards from "@/components/PreviewCards";
+import ArchitectureGraph from "@/components/ArchitectureGraph";
 import PromptInput from "@/components/PromptInput";
 import type { DesignResult } from "@/types/design";
 
@@ -51,6 +52,7 @@ export default function Page() {
         </div>
       )}
       <PreviewCards result={result} />
+      <ArchitectureGraph result={result} />
       <Footer />
     </main>
   );
