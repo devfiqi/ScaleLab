@@ -7,6 +7,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -48,6 +49,7 @@ func (h *Routes) Generate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Gen.Generate(ctx, req.Input)
 	if err != nil {
+		log.Printf("generate error: %v", err)
 		http.Error(w, "generation failed", http.StatusBadGateway)
 		return
 	}
