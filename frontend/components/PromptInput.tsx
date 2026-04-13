@@ -50,6 +50,11 @@ export default function PromptInput({ onGenerate, loading }: PromptInputProps) {
             {loading ? "Generating..." : "Generate"}
           </button>
         </div>
+        {loading ? (
+          <p className="text-xs text-muted">
+            The model is writing your design—often around 20–45 seconds.
+          </p>
+        ) : null}
 
         {/* Example chips */}
         <div className="flex flex-wrap items-center gap-2">
