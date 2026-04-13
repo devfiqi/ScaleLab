@@ -7,6 +7,8 @@ import ReactFlow, {
   Position,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   ConnectionLineType,
   MarkerType,
 } from "reactflow";
@@ -141,13 +143,23 @@ const EDGE_STYLE_MAP: Record<GraphEdgeKind, { stroke: string; dash?: string; ani
 
 /* ── dagre layout ── */
 
-const NODE_WIDTH = 180;
-const NODE_HEIGHT = 52;
+const NODE_WIDTH = 200;
+const NODE_HEIGHT = 58;
+const RANK_SEP = 130;  // vertical gap between layers
+const NODE_SEP = 80;   // horizontal gap between siblings
+const EDGE_SEP = 30;   // gap between parallel edges
 
 function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "TB", ranksep: 70, nodesep: 50 });
+  g.setGraph({
+    rankdir: "TB",
+    ranksep: RANK_SEP,
+    nodesep: NODE_SEP,
+    edgesep: EDGE_SEP,
+    marginx: 40,
+    marginy: 40,
+  });
 
   nodes.forEach((n) => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
@@ -160,6 +172,36 @@ function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
       position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 },
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
+    };
+  });
+}
+
+/* ── spread edges sharing the same source–target pair so they don't overlap ── */
+
+function spreadEdges(edges: Edge[]): Edge[] {
+  // group edges by source→target pair
+  const pairMap: Record<string, number> = {};
+  const pairCount: Record<string, number> = {};
+  edges.forEach((e) => {
+    const key = `${e.source}→${e.target}`;
+    pairCount[key] = (pairCount[key] || 0) + 1;
+  });
+
+  return edges.map((e) => {
+    const key = `${e.source}→${e.target}`;
+    const count = pairCount[key];
+    if (count <= 1) return e;
+
+    // assign index within this pair
+    const idx = pairMap[key] || 0;
+    pairMap[key] = idx + 1;
+
+    // offset each duplicate edge so they don't stack
+    const offset = (idx - (count - 1) / 2) * 25;
+
+    return {
+      ...e,
+      pathOptions: { offset },
     };
   });
 }
@@ -185,7 +227,8 @@ function toReactFlowNodes(data: GraphData): Node[] {
         textTransform: "uppercase" as const,
         letterSpacing: "0.05em",
         padding: "12px 16px",
-        width: NODE_WIDTH,
+        minWidth: NODE_WIDTH,
+        maxWidth: NODE_WIDTH,
       },
     };
   });
@@ -201,6 +244,7 @@ function toReactFlowEdges(data: GraphData): Edge[] {
       target: e.to,
       label: e.label,
       type: "smoothstep",
+      pathOptions: { borderRadius: 20 },
       animated: edgeStyle.animated || false,
       style: {
         stroke: edgeStyle.stroke,
@@ -391,7 +435,9 @@ type ArchitectureGraphProps = {
   result: DesignResult | null;
 };
 
-export default function ArchitectureGraph({ result }: ArchitectureGraphProps) {
+function ArchitectureGraphInner({ result }: ArchitectureGraphProps) {
+  const { fitView } = useReactFlow();
+
   const graphData = useMemo(() => {
     if (!result) return DEFAULT_GRAPH;
     if (result.graph && result.graph.nodes && result.graph.nodes.length > 0) {
@@ -401,19 +447,37 @@ export default function ArchitectureGraph({ result }: ArchitectureGraphProps) {
   }, [result]);
 
   const rawNodes = useMemo(() => toReactFlowNodes(graphData), [graphData]);
-  const rawEdges = useMemo(() => toReactFlowEdges(graphData), [graphData]);
+  const rawEdges = useMemo(() => spreadEdges(toReactFlowEdges(graphData)), [graphData]);
   const laidOut = useMemo(() => layoutGraph(rawNodes, rawEdges), [rawNodes, rawEdges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(laidOut);
   const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges);
 
-  useEffect(() => { setNodes(laidOut); }, [laidOut, setNodes]);
-  useEffect(() => { setEdges(rawEdges); }, [rawEdges, setEdges]);
+  useEffect(() => {
+    setNodes(laidOut);
+    setEdges(rawEdges);
+    setTimeout(() => fitView({ padding: 0.12, includeHiddenNodes: true }), 100);
+  }, [laidOut, rawEdges, setNodes, setEdges, fitView]);
 
-  const onInit = useCallback((instance: any) => {
-    setTimeout(() => instance.fitView({ padding: 0.2 }), 0);
-  }, []);
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      connectionLineType={ConnectionLineType.SmoothStep}
+      fitView
+      fitViewOptions={{ padding: 0.12 }}
+      proOptions={{ hideAttribution: true }}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      minZoom={0.2}
+      maxZoom={2}
+    />
+  );
+}
 
+export default function ArchitectureGraph({ result }: ArchitectureGraphProps) {
   return (
     <section className="mx-auto max-w-5xl px-6 pb-10 pt-2">
       <div className="mb-6 flex items-center gap-3 border-b-2 border-fg pb-3">
@@ -423,21 +487,10 @@ export default function ArchitectureGraph({ result }: ArchitectureGraphProps) {
         </h2>
       </div>
 
-      <div className="border-3 border-fg bg-card shadow-hard-lg" style={{ height: 480 }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onInit={onInit}
-          connectionLineType={ConnectionLineType.SmoothStep}
-          fitView
-          proOptions={{ hideAttribution: true }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          minZoom={0.3}
-          maxZoom={2}
-        />
+      <div className="border-3 border-fg bg-card shadow-hard-lg" style={{ height: 600 }}>
+        <ReactFlowProvider>
+          <ArchitectureGraphInner result={result} />
+        </ReactFlowProvider>
       </div>
     </section>
   );

@@ -19,15 +19,18 @@ export default function Page() {
     setError(null);
 
     try {
-      const res = await fetch("http://localhost:8080/generate", {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+      const res = await fetch(`${apiUrl}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input }),
       });
 
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Request failed");
+        if (res.status === 429) {
+          throw new Error("Too many requests — please wait a moment and try again.");
+        }
+        throw new Error("Generation failed. Please try again.");
       }
 
       const data: DesignResult = await res.json();
