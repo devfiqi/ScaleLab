@@ -29,6 +29,26 @@ export type ScalingStrategy = {
   description: string;
 };
 
+export type GraphNode = {
+  id: string;
+  label: string;
+  kind: string;
+  description?: string;
+};
+
+export type GraphEdge = {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  kind?: string;
+};
+
+export type GraphData = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+};
+
 export type DesignResult = {
   title: string;
   summary: string;
@@ -38,4 +58,5 @@ export type DesignResult = {
   bottlenecks: Bottleneck[];
   failureModes: FailureMode[];
   scalingStrategies: ScalingStrategy[];
+  graph?: GraphData;
 };
