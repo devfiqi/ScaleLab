@@ -37,9 +37,12 @@ func main() {
 
 	routes := &handlers.Routes{Gen: gen}
 
-	if _, ok := gen.(ai.Stub); ok {
-		log.Println("design generator: stub (set GOOGLE_API_KEY or GEMINI_API_KEY for Gemini)")
-	} else {
+	switch gen.(type) {
+	case ai.Stub:
+		log.Println("design generator: stub (set OPENAI_API_KEY or GEMINI_API_KEY to use AI)")
+	case *ai.OpenAI:
+		log.Println("design generator: openai")
+	case *ai.Gemini:
 		log.Println("design generator: gemini")
 	}
 
