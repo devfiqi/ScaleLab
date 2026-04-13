@@ -61,7 +61,7 @@ func (o *OpenAI) Generate(ctx context.Context, input string) (model.DesignResult
 			openai.UserMessage(prompt),
 		},
 		Temperature: openai.Float(0.35),
-		MaxTokens:   openai.Int(8192),
+		MaxTokens:   openai.Int(16384),
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: openai.Ptr(shared.NewResponseFormatJSONObjectParam()),
 		},
