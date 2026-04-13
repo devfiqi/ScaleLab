@@ -8,24 +8,47 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	"scalelab-backend/internal/ai"
 	"scalelab-backend/internal/handlers"
+	"scalelab-backend/internal/middleware"
 )
 
+// corsMiddleware restricts cross-origin access.
+// CORS_ORIGIN env var sets allowed origin (default: http://localhost:3000).
 func corsMiddleware(next http.Handler) http.Handler {
+	origin := os.Getenv("CORS_ORIGIN")
+	if origin == "" {
+		origin = "http://localhost:3000"
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		reqOrigin := r.Header.Get("Origin")
+		if reqOrigin != "" && matchOrigin(reqOrigin, origin) {
+			w.Header().Set("Access-Control-Allow-Origin", reqOrigin)
+		}
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Max-Age", "3600")
 
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func matchOrigin(reqOrigin, allowed string) bool {
+	for _, o := range strings.Split(allowed, ",") {
+		if strings.TrimSpace(o) == reqOrigin {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
@@ -46,6 +69,8 @@ func main() {
 		log.Println("design generator: gemini")
 	}
 
+	limiter := middleware.NewRateLimiter()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", handlers.HealthHandler)
@@ -53,7 +78,8 @@ func main() {
 
 	log.Println("server running on :8080")
 
-	err = http.ListenAndServe(":8080", corsMiddleware(mux))
+	handler := corsMiddleware(limiter.Middleware(mux))
+	err = http.ListenAndServe(":8080", handler)
 	if err != nil {
 		log.Fatal(err)
 	}

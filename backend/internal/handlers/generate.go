@@ -16,6 +16,7 @@ import (
 )
 
 const maxGenerateBodyBytes = 64 << 10
+const maxInputLength = 500
 
 // Routes holds dependencies for HTTP handlers.
 type Routes struct {
@@ -44,7 +45,12 @@ func (h *Routes) Generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	if len(req.Input) > maxInputLength {
+		http.Error(w, "input is too long (max 500 characters)", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
 	result, err := h.Gen.Generate(ctx, req.Input)
