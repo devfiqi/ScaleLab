@@ -3,6 +3,7 @@
 ScaleLab is an interactive system design platform that transforms natural language prompts into structured system architectures, tradeoffs, and visual diagrams.
 
 <img width="1100" height="1069" alt="Screenshot 2026-04-13 at 4 04 34 AM" src="https://github.com/user-attachments/assets/96f501ff-86ca-4c42-bd8f-d3d85bda0f0c" />
+<img width="1009" height="685" alt="Screenshot 2026-04-13 at 4 17 43 AM" src="https://github.com/user-attachments/assets/ae056f86-a8c3-42bf-9b20-dcf81bcef908" />
 
 Live Demo: https://scale-lab-alpha.vercel.app/#prompt  
 Repository: https://github.com/devfiqi/ScaleLab
