@@ -61,12 +61,7 @@ func (g *Gemini) Generate(ctx context.Context, input string) (model.DesignResult
 	cfg := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",
 		Temperature:      &temp,
-		// Cap output so the model finishes sooner; DesignResult JSON is typically well under this.
-		MaxOutputTokens: 4096,
-		// Newer Gemini models may spend time on "thinking"; minimal reduces that latency.
-		ThinkingConfig: &genai.ThinkingConfig{
-			ThinkingLevel: genai.ThinkingLevelMinimal,
-		},
+		MaxOutputTokens:  8192,
 	}
 
 	resp, err := g.client.Models.GenerateContent(ctx, g.model, []*genai.Content{user}, cfg)

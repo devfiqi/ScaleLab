@@ -7,20 +7,25 @@ import (
 	"strings"
 )
 
-// NewFromEnv returns Stub or Gemini based on DESIGN_AI_PROVIDER and API keys.
+// NewFromEnv returns Stub, Gemini, or OpenAI based on DESIGN_AI_PROVIDER and API keys.
 //
-// If DESIGN_AI_PROVIDER is unset: uses gemini when GEMINI_API_KEY or GOOGLE_API_KEY is set, otherwise stub.
-// DESIGN_AI_PROVIDER: "stub" | "gemini"
+// If DESIGN_AI_PROVIDER is unset: auto-detects based on which API key is set.
+// DESIGN_AI_PROVIDER: "stub" | "gemini" | "openai"
 // GEMINI_MODEL: optional, default gemini-2.5-flash
+// OPENAI_MODEL: optional, default gpt-4o-mini
 func NewFromEnv(ctx context.Context) (DesignGenerator, error) {
 	provider := strings.ToLower(strings.TrimSpace(os.Getenv("DESIGN_AI_PROVIDER")))
-	key := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
-	if key == "" {
-		key = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
+
+	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	if geminiKey == "" {
+		geminiKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
 	}
+	openaiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 
 	if provider == "" {
-		if key != "" {
+		if openaiKey != "" {
+			provider = "openai"
+		} else if geminiKey != "" {
 			provider = "gemini"
 		} else {
 			provider = "stub"
@@ -31,15 +36,24 @@ func NewFromEnv(ctx context.Context) (DesignGenerator, error) {
 	case "stub":
 		return Stub{}, nil
 	case "gemini":
-		if key == "" {
+		if geminiKey == "" {
 			return nil, fmt.Errorf("DESIGN_AI_PROVIDER=gemini requires GEMINI_API_KEY or GOOGLE_API_KEY")
 		}
 		modelName := strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
 		if modelName == "" {
 			modelName = "gemini-2.5-flash"
 		}
-		return NewGemini(ctx, key, modelName)
+		return NewGemini(ctx, geminiKey, modelName)
+	case "openai":
+		if openaiKey == "" {
+			return nil, fmt.Errorf("DESIGN_AI_PROVIDER=openai requires OPENAI_API_KEY")
+		}
+		modelName := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+		if modelName == "" {
+			modelName = "gpt-4o-mini"
+		}
+		return NewOpenAI(openaiKey, modelName)
 	default:
-		return nil, fmt.Errorf("unknown DESIGN_AI_PROVIDER %q (use stub or gemini)", provider)
+		return nil, fmt.Errorf("unknown DESIGN_AI_PROVIDER %q (use stub, gemini, or openai)", provider)
 	}
 }
