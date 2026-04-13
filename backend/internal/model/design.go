@@ -40,6 +40,26 @@ type ScalingStrategy struct {
 	Description string `json:"description"`
 }
 
+type GraphNode struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Kind        string `json:"kind"`
+	Description string `json:"description,omitempty"`
+}
+
+type GraphEdge struct {
+	ID    string `json:"id"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Label string `json:"label,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+}
+
+type GraphData struct {
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
 type DesignResult struct {
 	Title             string            `json:"title"`
 	Summary           string            `json:"summary"`
@@ -49,4 +69,5 @@ type DesignResult struct {
 	Bottlenecks       []Bottleneck      `json:"bottlenecks"`
 	FailureModes      []FailureMode     `json:"failureModes"`
 	ScalingStrategies []ScalingStrategy `json:"scalingStrategies"`
+	Graph             GraphData         `json:"graph"`
 }
