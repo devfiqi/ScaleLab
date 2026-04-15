@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useCallback, useEffect } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import ReactFlow, {
+  BaseEdge,
   Node,
   Edge,
+  EdgeProps,
   Position,
   useNodesState,
   useEdgesState,
@@ -11,6 +13,7 @@ import ReactFlow, {
   ReactFlowProvider,
   ConnectionLineType,
   MarkerType,
+  getSmoothStepPath,
 } from "reactflow";
 import dagre from "dagre";
 import "reactflow/dist/style.css";
@@ -141,15 +144,65 @@ const EDGE_STYLE_MAP: Record<GraphEdgeKind, { stroke: string; dash?: string; ani
   fanout:      { stroke: "#C05080", dash: "6 3", animated: true },
 };
 
-/* ── dagre layout ── */
+/* ── layout constants ── */
 
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 58;
-const RANK_SEP = 130;  // vertical gap between layers
-const NODE_SEP = 80;   // horizontal gap between siblings
-const EDGE_SEP = 30;   // gap between parallel edges
+const BASE_LAYOUT_WIDTH = 230;
+const BASE_LAYOUT_HEIGHT = 78;
+const RANK_SEP = 110;
+const NODE_SEP = 100;
+const EDGE_SEP = 40;
+const EDGE_TURN_OFFSET = 40;
+const EDGE_CURVE_RADIUS = 16;
+const SAME_PAIR_EDGE_SPREAD = 26;
 
-function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
+type LayoutMeta = { x: number; y: number };
+
+type RoutedEdgeData = {
+  turnOffset?: number;
+  sourcePos?: Position;
+  targetPos?: Position;
+};
+
+/* ── per-edge handle direction based on relative node positions ── */
+
+function edgeHandles(
+  srcPos: LayoutMeta,
+  tgtPos: LayoutMeta,
+): { sourcePos: Position; targetPos: Position } {
+  const dx = tgtPos.x - srcPos.x;
+  const dy = tgtPos.y - srcPos.y;
+
+  if (dy > NODE_HEIGHT * 0.8 && Math.abs(dx) < Math.abs(dy) * 1.2) {
+    return { sourcePos: Position.Bottom, targetPos: Position.Top };
+  }
+  if (dy < -NODE_HEIGHT * 0.8 && Math.abs(dx) < Math.abs(dy) * 1.2) {
+    return { sourcePos: Position.Top, targetPos: Position.Bottom };
+  }
+  if (dx > 0) {
+    return { sourcePos: Position.Right, targetPos: Position.Left };
+  }
+  return { sourcePos: Position.Left, targetPos: Position.Right };
+}
+
+/* ── count edges per node for layout inflation ── */
+
+function nodeDegrees(edges: Edge[]): Map<string, number> {
+  const deg = new Map<string, number>();
+  edges.forEach((e) => {
+    deg.set(e.source, (deg.get(e.source) || 0) + 1);
+    deg.set(e.target, (deg.get(e.target) || 0) + 1);
+  });
+  return deg;
+}
+
+/* ── dagre layout with per-edge handle computation ── */
+
+function layoutGraph(
+  nodes: Node[],
+  edges: Edge[],
+): { laidOut: Node[]; edgeHandleMap: Map<string, { sourcePos: Position; targetPos: Position }> } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({
@@ -159,27 +212,170 @@ function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
     edgesep: EDGE_SEP,
     marginx: 40,
     marginy: 40,
+    ranker: "network-simplex",
   });
 
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
+  const degrees = nodeDegrees(edges);
+  nodes.forEach((n) => {
+    const deg = degrees.get(n.id) || 0;
+    const extra = deg > 4 ? 30 : deg > 2 ? 15 : 0;
+    g.setNode(n.id, {
+      width: BASE_LAYOUT_WIDTH + extra,
+      height: BASE_LAYOUT_HEIGHT + extra * 0.4,
+    });
+  });
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
 
-  return nodes.map((n) => {
+  const layoutMeta = new Map<string, LayoutMeta>();
+  nodes.forEach((n) => {
     const pos = g.node(n.id);
+    layoutMeta.set(n.id, { x: pos.x, y: pos.y });
+  });
+
+  // Compute per-edge handle directions
+  const edgeHandleMap = new Map<string, { sourcePos: Position; targetPos: Position }>();
+  edges.forEach((e) => {
+    const src = layoutMeta.get(e.source);
+    const tgt = layoutMeta.get(e.target);
+    if (src && tgt) {
+      edgeHandleMap.set(e.id, edgeHandles(src, tgt));
+    }
+  });
+
+  // Per-node default positions from majority edge directions
+  const nodeSrcVotes = new Map<string, Record<string, number>>();
+  const nodeTgtVotes = new Map<string, Record<string, number>>();
+  edges.forEach((e) => {
+    const handles = edgeHandleMap.get(e.id);
+    if (!handles) return;
+    const sv = nodeSrcVotes.get(e.source) || {};
+    sv[handles.sourcePos] = (sv[handles.sourcePos] || 0) + 1;
+    nodeSrcVotes.set(e.source, sv);
+    const tv = nodeTgtVotes.get(e.target) || {};
+    tv[handles.targetPos] = (tv[handles.targetPos] || 0) + 1;
+    nodeTgtVotes.set(e.target, tv);
+  });
+
+  function majorityPos(votes: Record<string, number> | undefined, fallback: Position): Position {
+    if (!votes) return fallback;
+    let best = fallback;
+    let bestCount = 0;
+    for (const [pos, count] of Object.entries(votes)) {
+      if (count > bestCount) {
+        best = pos as Position;
+        bestCount = count;
+      }
+    }
+    return best;
+  }
+
+  const laidOut = nodes.map((n) => {
+    const pos = layoutMeta.get(n.id);
+    if (!pos) return n;
     return {
       ...n,
       position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
+      sourcePosition: majorityPos(nodeSrcVotes.get(n.id), Position.Bottom),
+      targetPosition: majorityPos(nodeTgtVotes.get(n.id), Position.Top),
+    };
+  });
+
+  return { laidOut, edgeHandleMap };
+}
+
+/* ── stamp per-edge handle positions into edge data ── */
+
+function applyEdgeHandles(
+  edges: Edge[],
+  handleMap: Map<string, { sourcePos: Position; targetPos: Position }>,
+): Edge[] {
+  return edges.map((e) => {
+    const handles = handleMap.get(e.id);
+    if (!handles) return e;
+    return {
+      ...e,
+      data: {
+        ...(e.data as RoutedEdgeData),
+        sourcePos: handles.sourcePos,
+        targetPos: handles.targetPos,
+      },
     };
   });
 }
 
-/* ── spread edges sharing the same source–target pair so they don't overlap ── */
+/* ── post-layout: hide labels that collide with node bounding boxes ── */
+
+type NodeBox = { id: string; x1: number; y1: number; x2: number; y2: number };
+
+function buildNodeBoxes(nodes: Node[], pad: number): NodeBox[] {
+  return nodes.map((n) => ({
+    id: n.id,
+    x1: n.position.x - pad,
+    y1: n.position.y - pad,
+    x2: n.position.x + NODE_WIDTH + pad,
+    y2: n.position.y + NODE_HEIGHT + pad,
+  }));
+}
+
+function labelCollidesWithNode(
+  lx: number,
+  ly: number,
+  boxes: NodeBox[],
+  sourceId: string,
+  targetId: string,
+): boolean {
+  const hw = 38, hh = 10;
+  return boxes.some(
+    (b) =>
+      b.id !== sourceId &&
+      b.id !== targetId &&
+      lx + hw >= b.x1 &&
+      lx - hw <= b.x2 &&
+      ly + hh >= b.y1 &&
+      ly - hh <= b.y2,
+  );
+}
+
+function markCongestedLabels(edges: Edge[], nodes: Node[]): Edge[] {
+  const boxes = buildNodeBoxes(nodes, 12);
+
+  const nodePos = new Map<string, { cx: number; cy: number }>();
+  nodes.forEach((n) => {
+    nodePos.set(n.id, {
+      cx: n.position.x + NODE_WIDTH / 2,
+      cy: n.position.y + NODE_HEIGHT / 2,
+    });
+  });
+
+  const placedLabels: { x: number; y: number }[] = [];
+
+  return edges.map((e) => {
+    if (!e.label) return e;
+    const src = nodePos.get(e.source);
+    const tgt = nodePos.get(e.target);
+    if (!src || !tgt) return e;
+
+    const midX = (src.cx + tgt.cx) / 2;
+    const midY = (src.cy + tgt.cy) / 2;
+
+    const hitsNode = labelCollidesWithNode(midX, midY, boxes, e.source, e.target);
+    const hitsLabel = placedLabels.some(
+      (p) => Math.abs(p.x - midX) < 60 && Math.abs(p.y - midY) < 18,
+    );
+
+    if (!hitsNode && !hitsLabel) {
+      placedLabels.push({ x: midX, y: midY });
+      return e;
+    }
+
+    return { ...e, label: undefined };
+  });
+}
+
+/* ── spread edges sharing the same source–target pair ── */
 
 function spreadEdges(edges: Edge[]): Edge[] {
-  // group edges by source→target pair
   const pairMap: Record<string, number> = {};
   const pairCount: Record<string, number> = {};
   edges.forEach((e) => {
@@ -192,19 +388,72 @@ function spreadEdges(edges: Edge[]): Edge[] {
     const count = pairCount[key];
     if (count <= 1) return e;
 
-    // assign index within this pair
     const idx = pairMap[key] || 0;
     pairMap[key] = idx + 1;
 
-    // offset each duplicate edge so they don't stack
-    const offset = (idx - (count - 1) / 2) * 25;
+    const offset = (idx - (count - 1) / 2) * SAME_PAIR_EDGE_SPREAD;
 
     return {
       ...e,
+      data: {
+        ...(e.data as RoutedEdgeData | undefined),
+        turnOffset: EDGE_TURN_OFFSET + Math.abs(offset),
+      },
       pathOptions: { offset },
     };
   });
 }
+
+/* ── custom edge component with per-edge handle overrides ── */
+
+function RoutedEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerEnd,
+  style,
+  label,
+  labelStyle,
+  labelBgStyle,
+  labelBgPadding,
+  data,
+}: EdgeProps<RoutedEdgeData>) {
+  const srcPos = data?.sourcePos ?? sourcePosition;
+  const tgtPos = data?.targetPos ?? targetPosition;
+
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition: srcPos,
+    targetPosition: tgtPos,
+    borderRadius: EDGE_CURVE_RADIUS,
+    offset: data?.turnOffset ?? EDGE_TURN_OFFSET,
+  });
+
+  return (
+    <BaseEdge
+      id={id}
+      path={path}
+      markerEnd={markerEnd}
+      style={style}
+      label={label}
+      labelX={labelX}
+      labelY={labelY}
+      labelStyle={labelStyle}
+      labelBgStyle={labelBgStyle}
+      labelBgPadding={labelBgPadding}
+      interactionWidth={20}
+    />
+  );
+}
+
+const edgeTypes = { routed: RoutedEdge };
 
 /* ── transform graph data → react flow ── */
 
@@ -243,8 +492,8 @@ function toReactFlowEdges(data: GraphData): Edge[] {
       source: e.from,
       target: e.to,
       label: e.label,
-      type: "smoothstep",
-      pathOptions: { borderRadius: 20 },
+      type: "routed",
+      data: { turnOffset: EDGE_TURN_OFFSET },
       animated: edgeStyle.animated || false,
       style: {
         stroke: edgeStyle.stroke,
@@ -429,6 +678,36 @@ const DEFAULT_GRAPH: GraphData = {
   ],
 };
 
+/* ── compute viewport from known node positions ── */
+
+function computeViewport(
+  nodes: Node[],
+  containerWidth: number,
+  containerHeight: number,
+  padding: number,
+): { x: number; y: number; zoom: number } {
+  if (nodes.length === 0) return { x: 0, y: 0, zoom: 1 };
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach((n) => {
+    minX = Math.min(minX, n.position.x);
+    minY = Math.min(minY, n.position.y);
+    maxX = Math.max(maxX, n.position.x + NODE_WIDTH);
+    maxY = Math.max(maxY, n.position.y + NODE_HEIGHT);
+  });
+
+  const graphW = maxX - minX;
+  const graphH = maxY - minY;
+  const usableW = containerWidth * (1 - padding * 2);
+  const usableH = containerHeight * (1 - padding * 2);
+
+  const zoom = Math.min(usableW / graphW, usableH / graphH, 1);
+  const x = (containerWidth - graphW * zoom) / 2 - minX * zoom;
+  const y = (containerHeight - graphH * zoom) / 2 - minY * zoom;
+
+  return { x, y, zoom: Math.max(zoom, 0.1) };
+}
+
 /* ── component ── */
 
 type ArchitectureGraphProps = {
@@ -436,7 +715,8 @@ type ArchitectureGraphProps = {
 };
 
 function ArchitectureGraphInner({ result }: ArchitectureGraphProps) {
-  const { fitView } = useReactFlow();
+  const { setViewport, fitView } = useReactFlow();
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const graphData = useMemo(() => {
     if (!result) return DEFAULT_GRAPH;
@@ -448,32 +728,43 @@ function ArchitectureGraphInner({ result }: ArchitectureGraphProps) {
 
   const rawNodes = useMemo(() => toReactFlowNodes(graphData), [graphData]);
   const rawEdges = useMemo(() => spreadEdges(toReactFlowEdges(graphData)), [graphData]);
-  const laidOut = useMemo(() => layoutGraph(rawNodes, rawEdges), [rawNodes, rawEdges]);
+  const { laidOut, edgeHandleMap } = useMemo(() => layoutGraph(rawNodes, rawEdges), [rawNodes, rawEdges]);
+  const handledEdges = useMemo(() => applyEdgeHandles(rawEdges, edgeHandleMap), [rawEdges, edgeHandleMap]);
+  const finalEdges = useMemo(() => markCongestedLabels(handledEdges, laidOut), [handledEdges, laidOut]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(laidOut);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(finalEdges);
 
   useEffect(() => {
     setNodes(laidOut);
-    setEdges(rawEdges);
-    setTimeout(() => fitView({ padding: 0.12, includeHiddenNodes: true }), 100);
-  }, [laidOut, rawEdges, setNodes, setEdges, fitView]);
+    setEdges(finalEdges);
+
+    const el = containerRef.current;
+    const w = el?.clientWidth || 1024;
+    const h = el?.clientHeight || 720;
+    const vp = computeViewport(laidOut, w, h, 0.04);
+
+    const t1 = setTimeout(() => setViewport(vp, { duration: 0 }), 50);
+    const t2 = setTimeout(() => fitView({ padding: 0.04, includeHiddenNodes: true }), 400);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [laidOut, finalEdges, setNodes, setEdges, setViewport, fitView]);
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      connectionLineType={ConnectionLineType.SmoothStep}
-      fitView
-      fitViewOptions={{ padding: 0.12 }}
-      proOptions={{ hideAttribution: true }}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      minZoom={0.2}
-      maxZoom={2}
-    />
+    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        connectionLineType={ConnectionLineType.SmoothStep}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        minZoom={0.1}
+        maxZoom={2}
+      />
+    </div>
   );
 }
 
@@ -487,7 +778,7 @@ export default function ArchitectureGraph({ result }: ArchitectureGraphProps) {
         </h2>
       </div>
 
-      <div className="border-3 border-fg bg-card shadow-hard-lg" style={{ height: 600 }}>
+      <div className="border-3 border-fg bg-card shadow-hard-lg" style={{ height: 720 }}>
         <ReactFlowProvider>
           <ArchitectureGraphInner result={result} />
         </ReactFlowProvider>
